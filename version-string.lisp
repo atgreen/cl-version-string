@@ -14,25 +14,33 @@
   "Get the current git commit hash (short form by default)"
   (handler-case
       (string-trim '(#\Newline #\Return #\Space)
-                   (with-output-to-string (stream)
-                     (sb-ext:run-program "git"
-                                       (list "rev-parse"
-                                             (format nil "--short=~d" length)
-                                             "HEAD")
-                                       :output stream
-                                       :error nil
-                                       :search t)))
+                   (uiop:run-program (list "git" "rev-parse"
+                                          (format nil "--short=~d" length)
+                                          "HEAD")
+                                    :output :string
+                                    :error-output nil
+                                    :ignore-error-status t))
+    (error () nil)))
+
+(defun get-git-tag ()
+  "Get the first git tag that points to the current commit"
+  (handler-case
+      (let ((output (string-trim '(#\Newline #\Return #\Space)
+                                (uiop:run-program '("git" "tag" "--points-at" "HEAD")
+                                                 :output :string
+                                                 :error-output nil
+                                                 :ignore-error-status t))))
+        (when (and output (not (string= output "")))
+          (first (split-sequence:split-sequence #\Newline output))))
     (error () nil)))
 
 (defun get-git-dirty-p ()
   "Check if the working directory has uncommitted changes"
   (handler-case
-      (let ((output (with-output-to-string (stream)
-                      (sb-ext:run-program "git"
-                                        '("status" "--porcelain")
-                                        :output stream
-                                        :error nil
-                                        :search t))))
+      (let ((output (uiop:run-program '("git" "status" "--porcelain")
+                                     :output :string
+                                     :error-output nil
+                                     :ignore-error-status t)))
         (not (string= (string-trim '(#\Newline #\Return #\Space) output) "")))
     (error () nil)))
 
@@ -42,16 +50,22 @@
       (asdf:component-version (asdf:find-system system))
     (error () "0.0.0")))
 
-(defun make-version-string (&key include-git-p)
+(defun make-version-string (system &key include-git-p)
   "Create a version string, optionally including git information"
-  (let ((base-version (get-base-version)))
+  (let ((base-version (get-base-version system)))
     (if include-git-p
-        (let ((git-hash (get-git-hash))
+        (let ((git-tag (get-git-tag))
+              (git-hash (get-git-hash))
               (dirty-p (get-git-dirty-p)))
-          (format nil "~a~@[-g~a~]~:[~;+dirty~]"
-                  base-version
-                  git-hash
-                  dirty-p))
+          (cond
+            ;; If there's a git tag, use it (with dirty suffix if needed)
+            (git-tag
+             (format nil "~a~:[~;+dirty~]" git-tag dirty-p))
+            ;; Otherwise use base version with git hash
+            (git-hash
+             (format nil "~a-g~a~:[~;+dirty~]" base-version git-hash dirty-p))
+            ;; Fallback to base version
+            (t base-version)))
         base-version)))
 
 (defmacro define-version-parameter (symbol system)
@@ -59,4 +73,4 @@
      (defparameter ,symbol (version-string:get-base-version ,system))
      (defmethod asdf:perform :before ((op asdf:program-op)
                                       (system (eql (asdf:find-system ,system))))
-       (setf ,symbol (version-string:make-version-string :include-git-p t)))))
+       (setf ,symbol (version-string:make-version-string ,system :include-git-p t)))))
