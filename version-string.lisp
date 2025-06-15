@@ -31,7 +31,11 @@
                                                  :error-output nil
                                                  :ignore-error-status t))))
         (when (and output (not (string= output "")))
-          (first (split-sequence:split-sequence #\Newline output))))
+          ;; Just take everything up to the first newline
+          (let ((newline-pos (position #\Newline output)))
+            (if newline-pos
+                (subseq output 0 newline-pos)
+                output))))
     (error () nil)))
 
 (defun get-git-dirty-p ()
