@@ -11,5 +11,5 @@
     :version     "1.0.0"
     :depends-on  ()
     :serial t
-    :components ((:file "version-string.lisp")))
+    :components ((:file "version-string")))
 
