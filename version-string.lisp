@@ -10,33 +10,15 @@
 
 (in-package #:version-string)
 
-(defun get-git-hash (&optional (length 7))
-  "Get the current git commit hash (short form by default)"
-  (handler-case
-      (let ((gh (string-trim '(#\Newline #\Return #\Space)
-                             (uiop:run-program (list "git" "rev-parse"
-                                                     (format nil "--short=~d" length)
-                                                     "HEAD")
-                                               :output :string
-                                               :error-output nil
-                                               :ignore-error-status t))))
-        (if (zerop (length gh)) nil gh))
-    (error () nil)))
-
-(defun get-git-tag ()
-  "Get the first git tag that points to the current commit"
+(defun get-git-describe ()
+  "Get version info from git describe (e.g., v1.0.0-14-g2414721)"
   (handler-case
       (let ((output (string-trim '(#\Newline #\Return #\Space)
-                                (uiop:run-program '("git" "tag" "--points-at" "HEAD")
-                                                 :output :string
-                                                 :error-output nil
-                                                 :ignore-error-status t))))
-        (when (and output (not (string= output "")))
-          ;; Just take everything up to the first newline
-          (let ((newline-pos (position #\Newline output)))
-            (if newline-pos
-                (subseq output 0 newline-pos)
-                output))))
+                                 (uiop:run-program '("git" "describe" "--tags" "--always")
+                                                   :output :string
+                                                   :error-output nil
+                                                   :ignore-error-status t))))
+        (if (zerop (length output)) nil output))
     (error () nil)))
 
 (defun get-git-dirty-p ()
@@ -59,18 +41,11 @@
   "Create a version string, optionally including git information"
   (let ((base-version (get-base-version system)))
     (if include-git-p
-        (let ((git-tag (get-git-tag))
-              (git-hash (get-git-hash))
+        (let ((git-describe (get-git-describe))
               (dirty-p (get-git-dirty-p)))
-          (cond
-            ;; If there's a git tag, use it (with dirty suffix if needed)
-            (git-tag
-             (format nil "~a~:[~;+dirty~]" git-tag dirty-p))
-            ;; Otherwise use base version with git hash
-            (git-hash
-             (format nil "~a-g~a~:[~;+dirty~]" base-version git-hash dirty-p))
-            ;; Fallback to base version
-            (t base-version)))
+          (if git-describe
+              (format nil "~a~:[~;+dirty~]" git-describe dirty-p)
+              base-version))
         base-version)))
 
 (defmacro define-version-parameter (symbol system)
